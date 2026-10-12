@@ -1,0 +1,35 @@
+# Publishes index.html to GitHub Pages, writing carto-key.js from the CARTO_KEY repository secret
+# so the key never lives in the repo. (It is still visible to visitors: restrict it in the CARTO dashboard.)
+name: Deploy to GitHub Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # lets you re-run it by hand, e.g. after rotating the key
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build site folder
+        env:
+          CARTO_KEY: ${{ secrets.CARTO_KEY }}
+        run: |
+          if [ -z "$CARTO_KEY" ]; then echo "::error::Add a CARTO_KEY secret under Settings > Secrets and variables > Actions"; exit 1; fi
+          mkdir -p site
+          cp index.html site/
+          printf "window.BI_CARTO_KEY = '%s';\n" "$CARTO_KEY" > site/carto-key.js
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
