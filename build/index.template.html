@@ -1,0 +1,927 @@
+<title>Booth Inspector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a returning officer's desk — the booth map is the sheet on the left, the tally panel sits to its right; stacks on phones. */
+:root {
+  --bg: #EEF1F4;
+  --panel: #FFFFFF;
+  --ink: #141920;
+  --ink-2: #4A5361;
+  --ink-3: #7D8694;
+  --rule: #DCE1E7;
+  --sea: #E3EAF0;
+  --land: #FAFBFC;
+  --coast: #C3CCD6;
+  --ghost: #B8C0CA;
+  --border: #8E99A8;
+  --accent: #0E6F8A;
+  --accent-soft: #E1F1F5;
+  /* party colours (convention-bound; see notes in README) */
+  --p-GRN: #1B7A3A; --p-LAB: #E8434A; --p-TPM: #7E1846; --p-TOP: #12A5A0;
+  --p-NZF: #3E4450; --p-NAT: #2563C9; --p-ACT: #E2AE07; --p-OTH: #B9BDC4;
+  /* diverging lean: deliberately NOT party colours (purple = Lab/Grn/TPM bloc, orange = Nat/ACT/NZF bloc) */
+  --lean-l: #6E48C2; --lean-m: #CDD1D7; --lean-r: #D9731F;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1216; --panel: #151A20; --ink: #E7EBF0; --ink-2: #A8B0BC; --ink-3: #78818E; --rule: #28303A;
+    --sea: #0A0E12; --land: #1A2028; --coast: #333C48; --ghost: #3A434F; --border: #5A6575; --accent: #5CC6E2; --accent-soft: #15303A;
+    --p-GRN: #2FA352; --p-LAB: #FF6B6B; --p-TPM: #B65196; --p-TOP: #1E9E98;
+    --p-NZF: #C9CED6; --p-NAT: #4F8DF0; --p-ACT: #F0C030; --p-OTH: #6B717C;
+    --lean-l: #A486F0; --lean-m: #4A525E; --lean-r: #F0954A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1216; --panel: #151A20; --ink: #E7EBF0; --ink-2: #A8B0BC; --ink-3: #78818E; --rule: #28303A;
+  --sea: #0A0E12; --land: #1A2028; --coast: #333C48; --ghost: #3A434F; --border: #5A6575; --accent: #5CC6E2; --accent-soft: #15303A;
+  --p-GRN: #2FA352; --p-LAB: #FF6B6B; --p-TPM: #B65196; --p-TOP: #1E9E98;
+  --p-NZF: #C9CED6; --p-NAT: #4F8DF0; --p-ACT: #F0C030; --p-OTH: #6B717C;
+  --lean-l: #A486F0; --lean-m: #4A525E; --lean-r: #F0954A;
+  color-scheme: dark;
+}
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
+* { box-sizing: border-box; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; padding-inline: 16px; padding-block: 0 16px; gap: 12px; }
+
+/* ---------- masthead ---------- */
+.mast { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 24px; padding-block: 14px 0; }
+.mast h1 { margin: 0; font-family: var(--f-display); font-stretch: 125%; font-weight: 800; font-size: 22px; letter-spacing: -0.01em; text-transform: uppercase; line-height: 1; }
+.mast .sub { color: var(--ink-2); font-size: 13px; }
+.mast .sub b { font-weight: 600; color: var(--ink); }
+.mast .spacer { flex: 1; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.field { display: flex; align-items: center; gap: 6px; }
+.field label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); font-weight: 600; }
+select, input[type=search] { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 8px; min-height: 34px; }
+select { padding-right: 24px; max-width: 220px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.seg button { border: 0; background: transparent; padding: 6px 10px; min-height: 32px; cursor: pointer; color: var(--ink-2); font-size: 13px; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+
+/* ---------- desk ---------- */
+.desk { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 470px); gap: 12px; min-height: 0; }
+.mapwrap { position: relative; background: var(--sea); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; min-height: 420px; }
+#map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#map.dragging { cursor: grabbing; }
+/* stacking: Leaflet's panes use z-index 200-700, so the basemap gets its own context (0) and everything we draw sits above it */
+#basemap { position: absolute; inset: 0; background: var(--sea); z-index: 0; }
+#map { z-index: 1; }
+.mapbar, .legend, .zoom, .mapnote { z-index: 2; }
+.has-basemap #map { pointer-events: none; }
+#basemap .leaflet-control-attribution { pointer-events: auto; font-size: 10px; }
+.has-basemap .zoom { bottom: 26px; }
+.mapnote { position: absolute; left: 50%; transform: translateX(-50%); top: 56px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; font-size: 12px; color: var(--ink-2); max-width: calc(100% - 32px); }
+.mapbar { position: absolute; left: 10px; top: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; pointer-events: none; }
+.mapbar > * { pointer-events: auto; }
+.mapbar .seg { box-shadow: 0 1px 2px rgb(0 0 0 / .06); }
+.zoom { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+.zoom button { width: 34px; height: 34px; border-radius: 6px; border: 1px solid var(--rule); background: var(--panel); cursor: pointer; font-size: 16px; line-height: 1; }
+.legend { position: absolute; left: 10px; bottom: 10px; background: color-mix(in oklab, var(--panel) 92%, transparent); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font-size: 12px; max-width: min(360px, calc(100% - 70px)); }
+.legend .lt { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); font-weight: 600; margin-bottom: 4px; }
+.legend .ramp { display: flex; height: 10px; border-radius: 2px; overflow: hidden; gap: 1px; }
+.legend .ramp i { flex: 1; }
+.legend .ends { display: flex; justify-content: space-between; color: var(--ink-2); font-size: 11px; margin-top: 3px; gap: 12px; }
+.legend .keys { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.key { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+.legend .note { color: var(--ink-3); font-size: 11px; margin-top: 4px; }
+
+.tip { position: absolute; pointer-events: none; z-index: 5; background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font-size: 12px; width: max-content; max-width: 270px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
+.tip .t1 { font-weight: 650; font-size: 13px; line-height: 1.25; }
+.tip .t2 { color: var(--ink-2); line-height: 1.3; margin-top: 2px; }
+.tip .t3 { margin-top: 6px; display: grid; grid-template-columns: auto 1fr auto; gap: 2px 6px; align-items: center; }
+.tip .t3 .num { text-align: right; }
+
+/* ---------- panel ---------- */
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.sec { padding: 14px 16px; border-bottom: 1px solid var(--rule); display: grid; gap: 10px; }
+.sec:last-child { border-bottom: 0; }
+.eyebrow { font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-3); font-weight: 650; }
+h2 { margin: 0; font-family: var(--f-display); font-stretch: 112%; font-weight: 750; font-size: 21px; line-height: 1.15; text-wrap: balance; }
+h3 { margin: 0; font-size: 14px; font-weight: 650; }
+p { margin: 0; color: var(--ink-2); max-width: 62ch; }
+.muted { color: var(--ink-3); }
+.row-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-weight: 600; font-size: 13px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px 1px 6px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+
+/* stacked bar */
+.bar { display: flex; gap: 2px; height: 14px; min-width: 0; }
+.bar.tall { height: 22px; }
+.bar i { display: block; min-width: 1px; border-radius: 1px; position: relative; font-style: normal; font-size: 11px; line-height: 22px; color: #fff; overflow: hidden; white-space: nowrap; text-indent: 5px; font-weight: 600; }
+.bar i:first-child { border-radius: 3px 1px 1px 3px; }
+.bar i:last-child { border-radius: 1px 3px 3px 1px; }
+.barkey { display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: 12px; color: var(--ink-2); }
+.barkey .num { color: var(--ink); }
+
+/* tabs */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--rule); padding-inline: 16px; position: sticky; top: 0; background: var(--panel); z-index: 2; }
+.tabs button { border: 0; background: none; padding: 10px 10px 9px; cursor: pointer; color: var(--ink-3); font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* lists */
+.list { display: grid; }
+.li { display: grid; grid-template-columns: minmax(0, 1fr) 56px minmax(90px, 40%); gap: 4px 10px; align-items: center; padding: 6px 16px; border: 0; background: none; text-align: left; cursor: pointer; width: 100%; border-top: 1px solid color-mix(in oklab, var(--rule) 60%, transparent); }
+.li:hover, .li.hot { background: color-mix(in oklab, var(--accent-soft) 60%, var(--panel)); }
+.li.sel { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.li .nm { min-width: 0; }
+.li .nm b { display: block; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li .nm > span { display: block; color: var(--ink-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li .v { text-align: right; font-size: 12px; color: var(--ink-2); }
+.listhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 16px 6px; flex-wrap: wrap; }
+.groupt { padding: 12px 16px 4px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-3); font-weight: 650; }
+.badge { font-family: var(--f-mono); font-size: 10.5px; border: 1px solid var(--rule); border-radius: 3px; padding: 0 4px; color: var(--ink-3); margin-right: 4px; }
+
+/* detail card */
+.detail { display: grid; gap: 8px; }
+.ptable { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 3px 8px; align-items: center; font-size: 12.5px; }
+.ptable .num { text-align: right; }
+.ptable .pc { color: var(--ink-2); }
+.ptable .mini { height: 8px; border-radius: 2px; }
+.contrib { font-size: 12px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* scatter + matrix */
+.chart { width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--ink-3); font-size: 10.5px; font-family: var(--f-mono); }
+.chart .lab { fill: var(--ink-2); font-family: var(--f-body); font-size: 11px; }
+.stat { display: flex; gap: 8px 16px; flex-wrap: wrap; }
+.stat > div { flex: 1 1 0; min-width: 90px; }
+.stat div { display: grid; }
+.stat .big { font-family: var(--f-display); font-stretch: 100%; font-weight: 750; font-size: 20px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat .cap { font-size: 11.5px; color: var(--ink-3); }
+.mx { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; }
+.mx table { border-collapse: separate; border-spacing: 0; font-size: 11.5px; min-width: 100%; }
+.mx th, .mx td { padding: 4px 6px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--rule); }
+.mx thead th { position: sticky; top: 0; background: var(--panel); vertical-align: bottom; font-weight: 600; color: var(--ink-2); }
+.mx th.rh { text-align: left; position: sticky; left: 0; background: var(--panel); z-index: 1; font-weight: 600; }
+.mx td { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.mx td.own { box-shadow: inset 0 0 0 2px var(--accent); }
+.mx .ch { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.callout { font-size: 12.5px; color: var(--ink-2); background: var(--bg); border-radius: 6px; padding: 8px 10px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.results { position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; box-shadow: 0 6px 20px rgb(0 0 0 / .14); z-index: 10; max-height: 320px; overflow: auto; }
+.results button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 7px 10px; cursor: pointer; border-top: 1px solid var(--rule); }
+.results button:first-child { border-top: 0; }
+.results button:hover, .results button:focus-visible { background: var(--accent-soft); }
+.results b { display: block; font-weight: 600; font-size: 13px; }
+.results span { color: var(--ink-3); font-size: 11.5px; }
+.search { position: relative; }
+.search input { width: 240px; max-width: 100%; }
+
+@media (max-width: 900px) {
+  .app { height: auto; }
+  .desk { grid-template-columns: minmax(0, 1fr); }
+  .mapwrap { height: 62vh; min-height: 360px; }
+  .panel { overflow: visible; }
+  .search input { width: 100%; }
+  .search { flex: 1 1 100%; }
+  select { max-width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+
+<div class="app">
+  <header class="mast">
+    <div>
+      <h1>Booth Inspector</h1>
+      <div class="sub">2023 General Election · <b class="num" id="nPlaces"></b> voting places · <b class="num" id="nVotes"></b> party votes</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="controls">
+      <div class="field">
+        <label for="elSel">Electorate</label>
+        <select id="elSel"></select>
+      </div>
+      <div class="search">
+        <label class="sr" for="q">Find a voting place</label>
+        <input id="q" type="search" placeholder="Find a voting place or suburb" autocomplete="off">
+        <div class="results" id="results" hidden></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="desk">
+    <div class="mapwrap" id="mapwrap">
+      <canvas id="map" aria-label="Map of voting places, one dot per voting place sized by votes cast"></canvas>
+      <div class="mapbar">
+        <div class="seg" role="group" aria-label="Colour voting places by" id="modeSeg"></div>
+        <select id="partySel" aria-label="Party to show" hidden></select>
+        <div class="seg" role="group" aria-label="Background map" id="bmSeg" hidden>
+          <button data-bm="on" aria-pressed="true" title="Detailed street map underneath (needs internet)">Street map</button>
+          <button data-bm="off" aria-pressed="false" title="Plain coastline only: much lighter to pan and zoom">Simple · faster</button>
+        </div>
+        <div class="seg" role="group" aria-label="Which voting places" id="kindSeg">
+          <button data-k="all" aria-pressed="true">All</button>
+          <button data-k="A" aria-pressed="false">Advance</button>
+          <button data-k="E" aria-pressed="false">Election day</button>
+        </div>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="zoom">
+        <button id="zin" aria-label="Zoom in">+</button>
+        <button id="zout" aria-label="Zoom out">−</button>
+        <button id="zfit" aria-label="Fit to view" title="Fit to view">⤢</button>
+      </div>
+      <div class="tip" id="tip" hidden></div>
+    </div>
+    <aside class="panel" id="panel" aria-live="polite"></aside>
+  </main>
+</div>
+
+<script id="data" type="application/json">/*DATA*/</script>
+<script id="coast" type="application/json">/*COAST*/</script>
+<script id="bounds" type="application/json">/*BOUNDS*/</script>
+<script>
+(() => {
+'use strict';
+const D = JSON.parse(document.getElementById('data').textContent);
+const COAST = JSON.parse(document.getElementById('coast').textContent);
+const BOUNDS = JSON.parse(document.getElementById('bounds').textContent);
+const P = D.parties;
+const NP = P.length;
+const pi = n => P.indexOf(n);
+
+// ---------- party groups (fixed order = bar order: opposition bloc, TOP, governing bloc, others) ----------
+const G = [
+  { k: 'GRN', s: 'Green', f: 'Green Party' },
+  { k: 'LAB', s: 'Labour', f: 'Labour Party' },
+  { k: 'TPM', s: 'Te Pāti Māori', f: 'Te Pāti Māori' },
+  { k: 'TOP', s: 'TOP', f: 'The Opportunities Party (TOP)' },
+  { k: 'NZF', s: 'NZ First', f: 'New Zealand First Party' },
+  { k: 'NAT', s: 'National', f: 'National Party' },
+  { k: 'ACT', s: 'ACT', f: 'ACT New Zealand' },
+  { k: 'OTH', s: 'Others', f: 'All other parties' },
+];
+G.forEach(g => { g.idx = g.k === 'OTH' ? [] : [pi(g.f)]; });
+const used = new Set(G.flatMap(g => g.idx));
+G[7].idx = P.map((_, i) => i).filter(i => !used.has(i));
+const gIndexOfParty = new Array(NP);
+G.forEach((g, gi) => g.idx.forEach(i => gIndexOfParty[i] = gi));
+const NG = G.length;
+const gi = k => G.findIndex(g => g.k === k);
+const OPP = [gi('GRN'), gi('LAB'), gi('TPM')], GOV = [gi('NAT'), gi('ACT'), gi('NZF')];
+const groupOfPartyName = name => { const i = pi((name || '').trim()); return i < 0 ? NG - 1 : gIndexOfParty[i]; };
+const shortParty = name => { const i = pi((name || '').trim()); if (i < 0) return name || 'Independent'; const g = G[gIndexOfParty[i]]; return g.k === 'OTH' ? P[i] : g.s; };
+
+function groups(pv) { const o = new Array(NG).fill(0); for (let i = 0; i < NP; i++) o[gIndexOfParty[i]] += pv[i]; return o; }
+const sum = a => a.reduce((s, v) => s + v, 0);
+function lean(g) { const o = OPP.reduce((s, i) => s + g[i], 0), r = GOV.reduce((s, i) => s + g[i], 0); return (o + r) ? (r - o) / (r + o) : 0; }
+
+const fmt = n => n.toLocaleString('en-NZ');
+const pct = (v, t, d = 1) => t ? (100 * v / t).toFixed(d) + '%' : '–';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const nameCase = n => { const [sur, giv] = n.split(', '); const s = sur.split(/([ -])/).map(w => w.length > 1 ? w[0] + w.slice(1).toLowerCase() : w).join(''); return { full: (giv ? giv.split(' ')[0] + ' ' : '') + s, sur: s }; };
+
+// ---------- places + electorates ----------
+const places = D.places.map(([lat, lon, sub, addr, e, adv], i) => ({ i, lat, lon, sub, addr, e, adv }));
+const E = D.electorates.map(e => {
+  const rows = e.rows.map(([k, p, l, pv, pinf, cv, cinf], ri) => ({ ri, k, p, l, pv, pinf, cv, cinf, votes: sum(pv) }));
+  const pvTot = new Array(NP).fill(0); rows.forEach(r => r.pv.forEach((v, i) => pvTot[i] += v));
+  const cvTot = new Array(e.cands.length).fill(0); rows.forEach(r => r.cv && r.cv.forEach((v, i) => cvTot[i] += v));
+  const cands = e.cands.map(([n, party], ci) => ({ ci, n, party, ...nameCase(n), g: groupOfPartyName(party), votes: cvTot[ci] }));
+  const order = cands.slice().sort((a, b) => b.votes - a.votes);
+  return { ...e, home: e.id <= 65, rows, pvTot, cvTot, cands, winner: order[0], second: order[1], vt: sum(pvTot), ct: sum(cvTot), g: groups(pvTot) };
+});
+const byId = new Map(E.map(e => [e.id, e]));
+const NATIONAL = new Array(NP).fill(0); E.forEach(e => e.pvTot.forEach((v, i) => NATIONAL[i] += v));
+document.getElementById('nPlaces').textContent = fmt(places.length);
+document.getElementById('nVotes').textContent = fmt(sum(NATIONAL));
+
+// ---------- colours from CSS tokens ----------
+let C = {};
+function readColours() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = n => cs.getPropertyValue(n).trim();
+  C = { sea: v('--sea'), land: v('--land'), coast: v('--coast'), ghost: v('--ghost'), border: v('--border'), ink: v('--ink'), ink2: v('--ink-2'), ink3: v('--ink-3'), panel: v('--panel'), accent: v('--accent'), rule: v('--rule'),
+        g: G.map(g => v('--p-' + g.k)), l: v('--lean-l'), m: v('--lean-m'), r: v('--lean-r') };
+  LEAN_RAMP = buildLean();
+}
+const hex2 = h => { h = h.replace('#', ''); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); };
+const toHex = a => '#' + a.map(x => Math.round(Math.max(0, Math.min(255, x))).toString(16).padStart(2, '0')).join('');
+// OKLab mixing so ramps stay perceptually even
+const s2l = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const l2s = c => 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+function toLab(h) { const [r, g, b] = hex2(h).map(s2l);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s]; }
+function fromLab([L, a, b]) { const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
+  return toHex([4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s].map(l2s)); }
+function mix(h1, h2, t) { const a = toLab(h1), b = toLab(h2); return fromLab(a.map((v, i) => v + (b[i] - v) * t)); }
+let LEAN_RAMP = [];
+const LEAN_STEPS = [-0.6, -0.4, -0.2, -0.067, 0.067, 0.2, 0.4, 0.6]; // bin edges → 9 bins
+function buildLean() { const out = []; for (let i = 0; i < 9; i++) { const t = (i - 4) / 4; out.push(t < 0 ? mix(C.m, C.l, -t) : mix(C.m, C.r, t)); } return out; }
+function leanColour(x) { let b = 0; while (b < LEAN_STEPS.length && x > LEAN_STEPS[b]) b++; return LEAN_RAMP[b]; }
+const SHARE_STEPS = 7;
+
+// ---------- state ----------
+const S = { e: null, mode: 'first', party: gi('LAB'), kind: 'all', sel: null, hover: null, tab: 'booths', cand: null, sort: 'lean' };
+
+// ---------- dots: aggregate rows → map dots for the current view ----------
+let DOTS = [];
+function buildDots() {
+  const m = new Map();
+  const add = (e, r) => {
+    if (r.p < 0) return;
+    if (S.kind !== 'all' && r.k !== S.kind) return;
+    let d = m.get(r.p);
+    if (!d) { d = { p: places[r.p], pv: new Array(NP).fill(0), cv: null, rows: [] }; m.set(r.p, d); }
+    r.pv.forEach((v, i) => d.pv[i] += v);
+    if (S.e && r.cv) { d.cv = d.cv || new Array(r.cv.length).fill(0); r.cv.forEach((v, i) => d.cv[i] += v); }
+    d.rows.push({ e, r });
+  };
+  if (S.e) S.e.rows.forEach(r => add(S.e, r)); else E.forEach(e => e.rows.forEach(r => add(e, r)));
+  DOTS = [...m.values()].map(d => { d.votes = sum(d.pv); d.g = groups(d.pv); d.lean = lean(d.g); return d; }).filter(d => d.votes > 0);
+  DOTS.sort((a, b) => b.votes - a.votes);
+  const shares = DOTS.map(d => d.g[S.party] / d.votes).sort((a, b) => a - b);
+  S.shareMax = Math.max(0.05, shares[Math.floor(shares.length * 0.97)] || 0.05);
+}
+function dotColour(d) {
+  if (S.mode === 'lean') return leanColour(d.lean);
+  if (S.mode === 'first') { let b = 0; d.g.forEach((v, i) => { if (v > d.g[b]) b = i; }); return C.g[b]; }
+  if (S.mode === 'share') { const t = Math.min(1, d.g[S.party] / d.votes / S.shareMax); const step = Math.min(SHARE_STEPS - 1, Math.floor(t * SHARE_STEPS)); return mix(C.land, C.g[S.party], 0.12 + 0.88 * (step + 1) / SHARE_STEPS); }
+  if (S.mode === 'cand') { if (!d.cv || !sum(d.cv)) return C.ghost; let b = 0; d.cv.forEach((v, i) => { if (v > d.cv[b]) b = i; }); return C.g[S.e.cands[b].g]; }
+  return C.ink3;
+}
+
+// ---------- projection ----------
+// Web Mercator in radians (y down), so dots line up with a slippy-map basemap when one is present
+const DEG = Math.PI / 180;
+const K = Math.cos(41 * DEG);
+const BASEMAP = !!(window.BI_BASEMAP && window.L);
+if (window.BI_BASEMAP && !window.L) console.warn('[BoothInspector] Leaflet did not load, so there is no street map.');
+let useBasemap = BASEMAP; // false when the viewer turns the street map off, or if its tiles can't load
+const live = () => !!(lmap && useBasemap); // is Leaflet currently in charge of the view?
+const CHAT_DX = BASEMAP ? 0 : -5.2;
+function proj(lon, lat) { if (lon < 0) lon += 360; if (lon > 182) lon += CHAT_DX; return [lon * DEG, -Math.log(Math.tan(Math.PI / 4 + lat * DEG / 2))]; }
+const unproj = (x, y) => [x / DEG, (2 * Math.atan(Math.exp(-y)) - Math.PI / 2) / DEG];
+const U = DEG / K; // ~ one degree of latitude/longitude in projected units around NZ
+places.forEach(p => { [p.x, p.y] = proj(p.lon, p.lat); });
+// coastline: LINZ Topo 1:50k, three detail levels; each ring = projected Float32Array [x0,y0,x1,y1,...] + bbox + chatham flag
+const COAST_LV = COAST.levels.map(lv => ({ eps: lv.eps, rings: lv.rings.map(([x0, y0, x1, y1, flat]) => {
+  const n = flat.length / 2, a = new Float32Array(flat.length); let x = 0, y = 0;
+  for (let i = 0; i < n; i++) { x += flat[2 * i]; y += flat[2 * i + 1]; const [px, py] = proj(x / COAST.q, y / COAST.q); a[2 * i] = px; a[2 * i + 1] = py; }
+  const [bx0, by1] = proj(x0 / COAST.q, y0 / COAST.q), [bx1, by0] = proj(x1 / COAST.q, y1 / COAST.q);
+  return { a, b: [bx0, by0, bx1, by1], chat: x0 / COAST.q > 182 };
+}) }));
+// electorate borders (Stats NZ 2020 boundaries, used at the 2023 election), clipped to land; each line knows the two electorates it separates
+const BORDERS = {};
+if (BOUNDS) for (const kind of ['general', 'maori']) {
+  const B = BOUNDS[kind]; if (!B) continue;
+  BORDERS[kind] = { names: B.names, levels: B.levels.map((lines, li) => ({ tol: BOUNDS.tols[li], lines: lines.map(([x0, y0, x1, y1, flat, a, b]) => {
+    const n = flat.length / 2, arr = new Float32Array(flat.length); let x = 0, y = 0;
+    for (let i = 0; i < n; i++) { x += flat[2 * i]; y += flat[2 * i + 1]; const [px, py] = proj(x / BOUNDS.q, y / BOUNDS.q); arr[2 * i] = px; arr[2 * i + 1] = py; }
+    const [bx0, by1] = proj(x0 / BOUNDS.q, y0 / BOUNDS.q), [bx1, by0] = proj(x1 / BOUNDS.q, y1 / BOUNDS.q);
+    return { a: arr, b: [bx0, by0, bx1, by1], e1: B.names[a], e2: B.names[b] };
+  }) })) };
+}
+const chatPts = places.filter(p => p.lon < 0).map(p => [p.x, p.y]).concat(COAST_LV[0].rings.filter(r => r.chat).flatMap(r => [[r.b[0], r.b[1]], [r.b[2], r.b[3]]]));
+let chatBox = null;
+if (chatPts.length) { const xs = chatPts.map(p => p[0]), ys = chatPts.map(p => p[1]); chatBox = [Math.min(...xs) - .25 * U, Math.min(...ys) - .25 * U, Math.max(...xs) + .25 * U, Math.max(...ys) + .25 * U]; }
+if (BASEMAP) chatBox = null;
+const WORLD = (() => { const pp = BASEMAP ? places.filter(p => p.lon > 0) : places; const xs = pp.map(p => p.x), ys = pp.map(p => p.y); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; })();
+
+// ---------- canvas view ----------
+const cv = document.getElementById('map'), ctx = cv.getContext('2d'), wrap = document.getElementById('mapwrap');
+let W = 0, H = 0, DPR = 1;
+const V = { cx: 0, cy: 0, s: 1 };
+let anim = null;
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function resize() { if (live()) lmap.invalidateSize({ pan: false }); DPR = Math.min(2, devicePixelRatio || 1); W = wrap.clientWidth; H = wrap.clientHeight; /* inside the border: same box as the canvas and Leaflet */ cv.width = W * DPR; cv.height = H * DPR; readView(); draw(); }
+function fitBox(b, animate = true) {
+  const pad = 40, top = 60, bottom = 120;
+  const bw = Math.max(b[2] - b[0], 0.03 * U), bh = Math.max(b[3] - b[1], 0.03 * U);
+  const s = Math.min((W - pad * 2) / bw, (H - top - bottom) / bh);
+  animateTo({ cx: (b[0] + b[2]) / 2, cy: (b[1] + b[3]) / 2 - (top - bottom) / 2 / s, s }, animate);
+}
+function animateTo(target, animate = true) {
+  if (live()) {
+    const [lon, lat] = unproj(target.cx, target.cy), z = Math.max(4, Math.min(19, zOf(target.s)));
+    if (!animate || reduced || !W) lmap.setView([lat, lon], z, { animate: false });
+    else lmap.flyTo([lat, lon], z, { duration: 0.6, easeLinearity: 0.4 });
+    return;
+  }
+  if (!animate || reduced || !W) { Object.assign(V, target); draw(); return; }
+  const from = { ...V }, t0 = performance.now(), dur = 520;
+  cancelAnimationFrame(anim);
+  const lz0 = Math.log(from.s), lz1 = Math.log(target.s);
+  const step = now => { let t = Math.min(1, (now - t0) / dur); t = t < .5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+    V.s = Math.exp(lz0 + (lz1 - lz0) * t); V.cx = from.cx + (target.cx - from.cx) * t; V.cy = from.cy + (target.cy - from.cy) * t; draw(); if (t < 1) anim = requestAnimationFrame(step); };
+  anim = requestAnimationFrame(step);
+}
+const sx = x => (x - V.cx) * V.s + W / 2, sy = y => (y - V.cy) * V.s + H / 2;
+const zoomRel = () => V.s / BASE_S();
+const MAX_S = 256 * 2 ** 19 / (2 * Math.PI); // same deepest zoom as the street map (level 19)
+const BASE_S = () => Math.min((W - 80) / (WORLD[2] - WORLD[0]), (H - (W > 700 ? 100 : 180)) / (WORLD[3] - WORLD[1]));
+function radius(d) { const z = Math.max(1, zoomRel()); return Math.max(1.6, (0.8 + Math.sqrt(d.votes) * 0.11) * Math.min(z ** 0.33, 2.6)); }
+
+// ---------- optional basemap (local copy only: Leaflet + CARTO tiles; the published page can't load outside tiles) ----------
+let lmap = null, tiles = null, tileDark = null, mapRaf = 0, zoomRaf = 0, wheelTarget = null, wheelPt = null, wheelTimer = 0;
+// zoomGoal = the zoom we last asked Leaflet for and haven't seen arrive yet. Leaflet only starts its animation on the
+// next frame and keeps reporting the old zoom until then, so we must not read getZoom() while a request is in flight.
+let zoomGoal = null, zoomGoalTimer = 0;
+function applyWheel() {
+  if (!lmap || wheelTarget == null || zoomGoal != null || lmap._animatingZoom) return; // zoomend will call again
+  const z = wheelTarget; wheelTarget = null;
+  if (Math.abs(z - lmap.getZoom()) < 1e-3) return;
+  zoomGoal = z;
+  clearTimeout(zoomGoalTimer); zoomGoalTimer = setTimeout(() => { zoomGoal = null; applyWheel(); }, 800); // safety net
+  zoomAroundExact(wheelPt, z);
+}
+// Keep the place under the cursor fixed. Leaflet's setZoomAround goes through its rounded pixel origin, and the
+// rounding error compounds over a chain of wheel zooms; this works from the exact (unrounded) centre instead.
+function zoomAroundExact(pt, z) {
+  const z0 = lmap.getZoom(), half = lmap.getSize().divideBy(2), off = pt.subtract(half);
+  const cursorPx = lmap.project(lmap.getCenter(), z0).add(off).multiplyBy(lmap.getZoomScale(z, z0));
+  lmap.setView(lmap.unproject(cursorPx.subtract(off), z), z);
+}
+// cubic-bezier(0, 0, 0.25, 1), Leaflet's zoom easing
+function easeOut(x) {
+  if (x <= 0) return 0; if (x >= 1) return 1;
+  const bx = u => 3 * u * (1 - u) ** 2 * 0 + 3 * u * u * (1 - u) * 0.25 + u ** 3, by = u => 3 * u * u * (1 - u) * 1 + u ** 3;
+  let lo = 0, hi = 1, u = x; for (let i = 0; i < 24; i++) { u = (lo + hi) / 2; if (bx(u) < x) lo = u; else hi = u; }
+  return by(u);
+}
+const zOf = sc => Math.log2(sc * 2 * Math.PI / 256);
+if (BASEMAP) {
+  const div = document.createElement('div'); div.id = 'basemap'; wrap.insertBefore(div, cv);
+  wrap.classList.add('has-basemap');
+  lmap = L.map(div, { zoomControl: false, attributionControl: true, zoomSnap: 0, zoomDelta: 0.5, wheelPxPerZoomLevel: 100,
+    zoomAnimation: true, fadeAnimation: true, markerZoomAnimation: false, inertia: true, minZoom: 4, maxZoom: 19, keyboard: false, boxZoom: false, scrollWheelZoom: false });
+  lmap.attributionControl.setPrefix(false).setPosition('bottomright');
+  setTiles();
+  // one source of truth: whenever Leaflet's view changes, copy it into V and redraw the overlay (once per frame)
+  // Non-animated zooms make Leaflet discard every tile (the flashing), so zooms stay animated and the dot canvas
+  // plays the same CSS transform as Leaflet's tile pane, then redraws crisply when the animation ends.
+  lmap.on('move zoom viewreset resize', () => { if (mapRaf) return; mapRaf = requestAnimationFrame(() => { mapRaf = 0; if (lmap && lmap._animatingZoom) return; readView(); draw(); }); });
+  // During Leaflet's 0.25s zoom animation, redraw the dots every frame along the same path the tiles take
+  // (CSS transitions interpolate translate and scale linearly under cubic-bezier(0,0,0.25,1)), so dots keep their
+  // proper size instead of being stretched with the tiles and snapping back.
+  lmap.on('zoomanim', e => {
+    hideTip();
+    const scale = lmap.getZoomScale(e.zoom, lmap.getZoom()), half = lmap.getSize().divideBy(2);
+    const a = lmap.project(lmap.getCenter(), e.zoom), b = lmap.project(e.center, e.zoom);
+    const tx = half.x * (1 - scale) + (a.x - b.x), ty = half.y * (1 - scale) + (a.y - b.y);
+    const from = { cx: V.cx, cy: V.cy, s: V.s }, t0 = performance.now(), dur = reduced ? 0 : 250;
+    cancelAnimationFrame(zoomRaf);
+    const frame = now => {
+      const t = dur ? Math.min(1, (now - t0) / dur) : 1, k = easeOut(t);
+      const m = 1 + (scale - 1) * k; // screen = m * oldScreen + k * (tx, ty)
+      V.s = from.s * m; V.cx = from.cx - (m * W / 2 + k * tx - W / 2) / V.s; V.cy = from.cy - (m * H / 2 + k * ty - H / 2) / V.s;
+      draw();
+      if (t < 1) zoomRaf = requestAnimationFrame(frame);
+    };
+    zoomRaf = requestAnimationFrame(frame);
+  });
+  lmap.on('zoomend', () => { cancelAnimationFrame(zoomRaf); readView(); draw(); zoomGoal = null; clearTimeout(zoomGoalTimer); applyWheel(); });
+  // Wheel: accumulate every notch; if a zoom is animating, queue it and apply the total when it ends.
+  div.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = div.getBoundingClientRect();
+    wheelPt = L.point(e.clientX - r.left, e.clientY - r.top);
+    const base = wheelTarget ?? zoomGoal ?? (lmap._animatingZoom ? lmap._animateToZoom : lmap.getZoom());
+    wheelTarget = Math.max(lmap.getMinZoom(), Math.min(lmap.getMaxZoom(), base + wheelLevels(e)));
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(applyWheel, 30); // gather a burst of trackpad events into one step
+  }, { passive: false });
+  lmap.on('movestart', hideTip);
+  lmap.on('mousemove', e => hoverAt(e.containerPoint.x, e.containerPoint.y));
+  lmap.on('mouseout', () => { S.hover = null; hideTip(); draw(); markListHover(); });
+  lmap.on('click', e => { const d = pick(e.containerPoint.x, e.containerPoint.y); selectPlace(d ? d.p : null, false); if (d) showTip(d); });
+  if (!window.BI_CARTO_KEY) { const n = document.createElement('div'); n.className = 'mapnote'; n.textContent = 'No CARTO key found. Put it in carto-key.js next to this file to remove the watermark.'; wrap.appendChild(n); }
+}
+function readView() {
+  if (!live() || !lmap._loaded) return;
+  const c = lmap.getCenter(); const [x, y] = proj(c.lng, c.lat);
+  V.cx = x; V.cy = y; V.s = 256 * 2 ** lmap.getZoom() / (2 * Math.PI);
+}
+function setTiles() {
+  if (!lmap) return;
+  const dark = isDark(); if (dark === tileDark) return; tileDark = dark;
+  const old = tiles;
+  const key = encodeURIComponent(window.BI_CARTO_KEY || '');
+  tiles = L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/${dark ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png?key=${key}`,
+    { maxZoom: 20, keepBuffer: 4, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions">CARTO</a>' }).addTo(lmap);
+  if (old) tiles.once('load', () => lmap && lmap.removeLayer(old)); // swap themes without a blank frame
+  let ok = 0, bad = 0;
+  tiles.on('tileload', () => { ok++; });
+  tiles.on('tileerror', () => { bad++; if (bad >= 8 && !ok && useBasemap) basemapFailed('The street map tiles could not be loaded (offline, blocked, or the CARTO key was rejected). Showing the drawn coastline instead.'); });
+}
+// Street map on/off. Off hides Leaflet and hands panning/zooming back to the plain canvas map, which is much lighter.
+function setBasemap(on, remember = true) {
+  if (!lmap) return;
+  const div = document.getElementById('basemap');
+  if (on && !useBasemap) {
+    div.hidden = false; wrap.classList.add('has-basemap'); useBasemap = true;
+    lmap.invalidateSize({ pan: false });
+    const [lon, lat] = unproj(V.cx, V.cy);
+    lmap.setView([lat, lon], Math.max(4, Math.min(19, zOf(V.s))), { animate: false }); // pick up where the plain map was
+    readView();
+  } else if (!on && useBasemap) {
+    readView(); useBasemap = false; div.hidden = true; wrap.classList.remove('has-basemap'); hideTip();
+  }
+  document.querySelectorAll('#bmSeg button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.bm === 'on') === useBasemap)));
+  if (remember) { try { localStorage.setItem('bi-streetmap', useBasemap ? 'on' : 'off'); } catch (_) {} }
+  draw();
+}
+function basemapFailed(msg) {
+  useBasemap = false; chatBox = null;
+  if (lmap) { lmap.remove(); lmap = null; }
+  document.getElementById('bmSeg')?.remove();
+  const bm = document.getElementById('basemap'); if (bm) bm.remove();
+  wrap.classList.remove('has-basemap');
+  const n = document.createElement('div'); n.className = 'mapnote'; n.textContent = msg; wrap.appendChild(n);
+  console.warn('[BoothInspector]', msg); draw();
+}
+function drawBorders() {
+  const set = BORDERS[S.e && S.e.maori ? 'maori' : 'general'] || BORDERS.general; if (!set) return;
+  const mpp = 6378137 * K / V.s; // metres per screen pixel around NZ
+  let lv = set.levels[set.levels.length - 1];
+  for (const L of set.levels) if (L.tol / mpp < 0.7) { lv = L; break; }
+  const vx0 = V.cx - W / 2 / V.s, vx1 = V.cx + W / 2 / V.s, vy0 = V.cy - H / 2 / V.s, vy1 = V.cy + H / 2 / V.s;
+  const ox = W / 2 - V.cx * V.s, oy = H / 2 - V.cy * V.s, k = V.s, sel = S.e ? S.e.name : null;
+  const path = (filter) => { ctx.beginPath(); for (const ln of lv.lines) { if (!filter(ln)) continue;
+    if (ln.b[2] < vx0 || ln.b[0] > vx1 || ln.b[3] < vy0 || ln.b[1] > vy1) continue;
+    const a = ln.a; ctx.moveTo(a[0] * k + ox, a[1] * k + oy); for (let i = 2; i < a.length; i += 2) ctx.lineTo(a[i] * k + ox, a[i + 1] * k + oy); } };
+  ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  path(ln => ln.e1 !== sel && ln.e2 !== sel);
+  ctx.strokeStyle = C.border; ctx.globalAlpha = S.e ? 0.55 : 0.75; ctx.lineWidth = 1; ctx.stroke();
+  if (sel) { path(ln => ln.e1 === sel || ln.e2 === sel); ctx.globalAlpha = 1; ctx.strokeStyle = C.ink; ctx.lineWidth = 2.25; ctx.stroke(); }
+  ctx.restore();
+}
+function draw() {
+  if (!W) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (useBasemap) { ctx.clearRect(0, 0, W, H); } else {
+  ctx.fillStyle = C.sea; ctx.fillRect(0, 0, W, H);
+  // land
+  ctx.beginPath();
+  // pick the coarsest level whose simplification error stays under ~0.6px at this zoom
+  let lv = COAST_LV[COAST_LV.length - 1];
+  for (const L of COAST_LV) if (L.eps * U * V.s < 0.6) { lv = L; break; }
+  const vx0 = V.cx - W / 2 / V.s, vx1 = V.cx + W / 2 / V.s, vy0 = V.cy - H / 2 / V.s, vy1 = V.cy + H / 2 / V.s;
+  const ox = W / 2 - V.cx * V.s, oy = H / 2 - V.cy * V.s, k = V.s;
+  for (const r of lv.rings) {
+    if (r.b[2] < vx0 || r.b[0] > vx1 || r.b[3] < vy0 || r.b[1] > vy1) continue;
+    const a = r.a; ctx.moveTo(a[0] * k + ox, a[1] * k + oy);
+    for (let i = 2; i < a.length; i += 2) ctx.lineTo(a[i] * k + ox, a[i + 1] * k + oy);
+    ctx.closePath();
+  }
+  ctx.fillStyle = C.land; ctx.fill('evenodd'); ctx.strokeStyle = C.coast; ctx.lineWidth = 1; ctx.stroke();
+  }
+  if (chatBox) { ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = C.coast; ctx.strokeRect(sx(chatBox[0]), sy(chatBox[1]), (chatBox[2] - chatBox[0]) * V.s, (chatBox[3] - chatBox[1]) * V.s);
+    ctx.fillStyle = C.ink3; ctx.font = '10.5px "IBM Plex Mono", monospace'; ctx.fillText('Chatham Is. (moved)', sx(chatBox[0]), sy(chatBox[1]) - 5); ctx.restore(); }
+  drawBorders();
+  // ghost dots for the rest of the country when inspecting one electorate
+  if (S.e) { ctx.fillStyle = C.ghost; for (const p of places) { if (p.e === S.e.id) continue; const x = sx(p.x), y = sy(p.y); if (x < -5 || y < -5 || x > W + 5 || y > H + 5) continue; ctx.fillRect(x - 1, y - 1, 2, 2); } }
+  // dots, biggest first so small ones sit on top
+  for (const d of DOTS) {
+    const x = sx(d.p.x), y = sy(d.p.y), r = radius(d); d.sx = x; d.sy = y; d.r = r;
+    if (x < -r || y < -r || x > W + r || y > H + r) continue;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = dotColour(d); ctx.fill();
+    if (r > 2.2) { ctx.lineWidth = 1; ctx.strokeStyle = C.panel; ctx.stroke(); }
+  }
+  const ring = (d, col, w) => { if (!d) return; ctx.beginPath(); ctx.arc(d.sx, d.sy, d.r + w / 2 + 1.5, 0, Math.PI * 2); ctx.lineWidth = w; ctx.strokeStyle = col; ctx.stroke(); };
+  const sel = DOTS.find(d => d.p === S.sel), hov = DOTS.find(d => d.p === S.hover);
+  ring(hov, C.ink, 1.5); ring(sel, C.accent, 2.5);
+}
+
+// ---------- interaction: pan, zoom, hover ----------
+// One mouse-wheel notch = half a zoom level, the same in both versions. Trackpad scrolls send many small
+// pixel deltas; a trackpad pinch arrives as a wheel event with ctrlKey set and needs more gain.
+function wheelLevels(e) {
+  const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 600 : 1; // lines / pages -> pixels
+  const px = e.deltaY * unit;
+  const dz = -px / (e.ctrlKey ? 60 : 200);
+  return Math.max(-1.5, Math.min(1.5, dz));
+}
+const ptrs = new Map(); let dragMoved = false, pinch0 = null;
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY }); dragMoved = false; if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = { d: Math.hypot(a.x - b.x, a.y - b.y), s: V.s }; } });
+cv.addEventListener('pointermove', e => {
+  const p = ptrs.get(e.pointerId);
+  if (p) {
+    const dx = e.offsetX - p.x, dy = e.offsetY - p.y;
+    if (ptrs.size === 1 && (Math.abs(dx) + Math.abs(dy) > 2 || dragMoved)) { dragMoved = true; cv.classList.add('dragging'); V.cx -= dx / V.s; V.cy -= dy / V.s; hideTip(); draw(); }
+    p.x = e.offsetX; p.y = e.offsetY;
+    if (ptrs.size === 2 && pinch0) { const [a, b] = [...ptrs.values()]; const dd = Math.hypot(a.x - b.x, a.y - b.y); zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, pinch0.s * dd / pinch0.d / V.s); dragMoved = true; }
+    return;
+  }
+  hoverAt(e.offsetX, e.offsetY);
+});
+const endPtr = e => { const p = ptrs.get(e.pointerId); ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch0 = null; cv.classList.remove('dragging');
+  if (p && !dragMoved && e.type === 'pointerup') { const d = pick(e.offsetX, e.offsetY); selectPlace(d ? d.p : null, false); if (d && e.pointerType !== 'mouse') showTip(d); } };
+cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
+cv.addEventListener('pointerleave', () => { if (!ptrs.size) { S.hover = null; hideTip(); draw(); markListHover(); } });
+cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.offsetX, e.offsetY, 2 ** wheelLevels(e)); }, { passive: false });
+function zoomAt(px, py, f) { if (live()) { wheelPt = L.point(px, py); wheelTarget = Math.max(lmap.getMinZoom(), Math.min(lmap.getMaxZoom(), (wheelTarget ?? zoomGoal ?? lmap.getZoom()) + Math.log2(f))); applyWheel(); return; } const ns = Math.max(BASE_S() * 0.6, Math.min(MAX_S, V.s * f)); const wx = (px - W / 2) / V.s + V.cx, wy = (py - H / 2) / V.s + V.cy; V.s = ns; V.cx = wx - (px - W / 2) / ns; V.cy = wy - (py - H / 2) / ns; draw(); }
+document.getElementById('zin').onclick = () => zoomAt(W / 2, H / 2, 1.6);
+document.getElementById('zout').onclick = () => zoomAt(W / 2, H / 2, 1 / 1.6);
+document.getElementById('zfit').onclick = () => fitView();
+function pick(x, y) { let best = null, bd = Infinity; for (const d of DOTS) { if (d.sx === undefined) continue; const dd = Math.hypot(d.sx - x, d.sy - y); if (dd <= d.r + 4 && dd - d.r < bd) { bd = dd - d.r; best = d; } } return best; }
+function hoverAt(x, y) { const d = pick(x, y); const p = d ? d.p : null; if (p !== S.hover) { S.hover = p; draw(); markListHover(); } if (d) showTip(d); else hideTip(); (live() ? lmap.getContainer() : cv).style.cursor = d ? 'pointer' : ''; }
+
+const tip = document.getElementById('tip');
+function placeTitle(p) { const a = p.addr.split(',')[0]; return a; }
+function showTip(d) {
+  const top = d.g.map((v, i) => [v, i]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0]).slice(0, 4);
+  let h = `<div class="t1">${esc(placeTitle(d.p))}</div><div class="t2">${esc(d.p.sub)} · ${d.rows.some(x => x.r.k === 'A') ? (d.rows.some(x => x.r.k === 'E') ? 'Advance + election day' : 'Advance') : 'Election day'}</div>`;
+  h += `<div class="t2"><span class="num">${fmt(d.votes)}</span> party votes${!S.e && d.rows.length > 1 ? ` · ${new Set(d.rows.map(x => x.e.id)).size} electorates` : ''}</div>`;
+  h += `<div class="t3">${top.map(([v, i]) => `<span class="sw" style="background:${C.g[i]}"></span><span>${G[i].s}</span><span class="num">${pct(v, d.votes)}</span>`).join('')}</div>`;
+  if (S.e && S.mode === 'cand' && d.cv && sum(d.cv)) { const ct = sum(d.cv); const c = d.cv.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]).slice(0, 2);
+    h += `<div class="t3" style="border-top:1px solid var(--rule);padding-top:4px">${c.map(([v, i]) => `<span class="sw" style="background:${C.g[S.e.cands[i].g]}"></span><span>${esc(S.e.cands[i].full)}</span><span class="num">${pct(v, ct)}</span>`).join('')}</div>`; }
+  tip.innerHTML = h; tip.hidden = false;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let x = d.sx + d.r + 10, y = d.sy - th / 2;
+  if (x + tw > W - 8) x = d.sx - d.r - 10 - tw;
+  y = Math.max(8, Math.min(H - th - 8, y)); x = Math.max(8, x);
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+function hideTip() { tip.hidden = true; }
+
+// ---------- controls ----------
+const elSel = document.getElementById('elSel');
+elSel.innerHTML = `<option value="">All of New Zealand</option><optgroup label="General electorates">${E.filter(e => !e.maori).map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</optgroup><optgroup label="Māori electorates">${E.filter(e => e.maori).map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</optgroup>`;
+elSel.onchange = () => setElectorate(elSel.value ? byId.get(+elSel.value) : null);
+
+const modeSeg = document.getElementById('modeSeg'), partySel = document.getElementById('partySel');
+partySel.innerHTML = G.slice(0, 7).map((g, i) => `<option value="${i}">${g.s}</option>`).join('');
+partySel.value = S.party;
+partySel.onchange = () => { S.party = +partySel.value; buildDots(); draw(); legend(); renderPanel(); };
+function renderModes() {
+  const modes = [['first', 'Top party'], ['lean', 'Bloc lean'], ['share', 'Party share']];
+  if (S.e && !S.e.cancelled) modes.push(['cand', 'Electorate vote']);
+  if (!modes.find(m => m[0] === S.mode)) S.mode = 'first';
+  modeSeg.innerHTML = modes.map(([k, l]) => `<button data-m="${k}" aria-pressed="${S.mode === k}">${l}</button>`).join('');
+  partySel.hidden = S.mode !== 'share';
+}
+modeSeg.onclick = e => { const b = e.target.closest('button'); if (!b) return; S.mode = b.dataset.m; renderModes(); draw(); legend(); };
+document.getElementById('kindSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.kind = b.dataset.k; [...e.currentTarget.children].forEach(x => x.setAttribute('aria-pressed', x === b)); buildDots(); draw(); renderPanel(); };
+
+function legend() {
+  const L = document.getElementById('legend');
+  if (S.mode === 'lean') {
+    L.innerHTML = `<div class="lt">Bloc lean of the party vote (not individual parties)</div><div class="ramp">${LEAN_RAMP.map(c => `<i style="background:${c}"></i>`).join('')}</div>
+      <div class="ends"><span>Labour, Green, Te Pāti Māori</span><span>National, ACT, NZ First</span></div>
+      <div class="note">Even split in the middle · each step ≈ 13 points of lean · dot area = votes cast</div>`;
+  } else if (S.mode === 'first') {
+    const present = new Set(DOTS.map(d => { let b = 0; d.g.forEach((v, i) => { if (v > d.g[b]) b = i; }); return b; }));
+    L.innerHTML = `<div class="lt">Party with the most party votes</div><div class="keys">${G.map((g, i) => present.has(i) ? `<span class="key"><span class="sw" style="background:${C.g[i]}"></span>${g.s}</span>` : '').join('')}</div><div class="note">Dot area = votes cast</div>`;
+  } else if (S.mode === 'share') {
+    const steps = []; for (let s = 0; s < SHARE_STEPS; s++) steps.push(mix(C.land, C.g[S.party], 0.12 + 0.88 * (s + 1) / SHARE_STEPS));
+    L.innerHTML = `<div class="lt">${G[S.party].s} share of the party vote</div><div class="ramp">${steps.map(c => `<i style="background:${c}"></i>`).join('')}</div>
+      <div class="ends"><span class="num">0%</span><span class="num">${(S.shareMax * 50).toFixed(0)}%</span><span class="num">${(S.shareMax * 100).toFixed(0)}%+</span></div><div class="note">Top step is the highest 3% of voting places</div>`;
+  } else if (S.mode === 'cand') {
+    const gs = [...new Set(S.e.cands.filter(c => c.votes).map(c => c.g))];
+    const top = S.e.cands.slice().sort((a, b) => b.votes - a.votes).slice(0, 4);
+    L.innerHTML = `<div class="lt">Candidate who led the electorate vote</div><div class="keys">${top.map(c => `<span class="key"><span class="sw" style="background:${C.g[c.g]}"></span>${esc(c.full)}</span>`).join('')}</div>`;
+  }
+}
+
+// ---------- search ----------
+const q = document.getElementById('q'), results = document.getElementById('results');
+const placeIndex = places.map(p => ({ p, t: (p.sub + ' ' + p.addr).toLowerCase() }));
+q.addEventListener('input', () => {
+  const s = q.value.trim().toLowerCase();
+  if (s.length < 2) { results.hidden = true; return; }
+  const terms = s.split(/\s+/);
+  const el = E.filter(e => e.name.toLowerCase().includes(s)).slice(0, 3);
+  const hits = placeIndex.filter(x => terms.every(t => x.t.includes(t))).slice(0, 12);
+  results.innerHTML = el.map(e => `<button data-e="${e.id}"><b>${esc(e.name)}</b><span>Electorate</span></button>`).join('') +
+    hits.map(x => `<button data-p="${x.p.i}"><b>${esc(placeTitle(x.p))}</b><span>${esc(x.p.sub)} · ${esc(byId.get(x.p.e)?.name || '')}</span></button>`).join('') || `<div style="padding:8px 10px" class="muted">No voting places match “${esc(q.value)}”.</div>`;
+  results.hidden = false;
+});
+results.onclick = e => { const b = e.target.closest('button'); if (!b) return; results.hidden = true; q.value = '';
+  if (b.dataset.e) { setElectorate(byId.get(+b.dataset.e)); return; }
+  const p = places[+b.dataset.p];
+  if (S.e && S.e.id !== p.e && !S.e.rows.some(r => r.p === p.i)) setElectorate(null, false);
+  selectPlace(p, true);
+};
+document.addEventListener('click', e => { if (!e.target.closest('.search')) results.hidden = true; });
+q.addEventListener('keydown', e => { if (e.key === 'Escape') { results.hidden = true; q.blur(); } if (e.key === 'Enter') { const b = results.querySelector('button'); if (b) b.click(); } });
+
+// ---------- selection ----------
+function fitView(animate = true) {
+  if (S.e) {
+    const ds = S.e.home ? DOTS.filter(d => d.p.e === S.e.id) : DOTS;
+    if (ds.length) {
+      const tot = sum(ds.map(d => d.votes));
+      const wq = (key, q) => { const a = ds.map(d => [d.p[key], d.votes]).sort((x, y) => x[0] - y[0]); let c = 0; for (const [v, w] of a) { c += w; if (c >= q * tot) return v; } return a[a.length - 1][0]; };
+      const lo = 0.05, hi = 1 - lo;
+      const b = [wq('x', lo), wq('y', lo), wq('x', hi), wq('y', hi)];
+      const px = (b[2] - b[0]) * 0.08 + 0.01 * U, py = (b[3] - b[1]) * 0.08 + 0.01 * U;
+      fitBox([b[0] - px, b[1] - py, b[2] + px, b[3] + py], animate); return;
+    }
+  }
+  fitBox(WORLD, animate);
+}
+function setElectorate(e, fit = true) {
+  S.e = e || null; S.sel = null; S.cand = null; S.tab = 'booths';
+  elSel.value = e ? e.id : '';
+  try { history.replaceState(null, '', e ? '#e' + e.id : location.pathname); } catch (_) {}
+  renderModes(); buildDots(); if (fit) fitView(); else draw(); legend(); renderPanel();
+  document.getElementById('panel').scrollTop = 0;
+}
+function selectPlace(p, fly) {
+  S.sel = p; draw(); renderPanel();
+  if (p && fly) animateTo({ cx: p.x, cy: p.y, s: Math.max(V.s, BASE_S() * 18) });
+  if (p) { const el = document.querySelector(`[data-place="${p.i}"]`); if (el && fly) el.scrollIntoView({ block: 'nearest' }); }
+}
+function markListHover() { document.querySelectorAll('.li.hot').forEach(x => x.classList.remove('hot')); if (S.hover) document.querySelectorAll(`[data-place="${S.hover.i}"]`).forEach(x => x.classList.add('hot')); }
+
+// ---------- panel pieces ----------
+function bar(gv, tall) {
+  const t = sum(gv);
+  return `<div class="bar${tall ? ' tall' : ''}" role="img" aria-label="${gv.map((v, i) => v ? `${G[i].s} ${pct(v, t, 0)}` : '').filter(Boolean).join(', ')}">${gv.map((v, i) => v ? `<i style="flex:${v} 1 0;background:${C.g[i]};${G[i].k === 'ACT' || G[i].k === 'OTH' || (G[i].k === 'NZF' && isDark()) ? 'color:#14181f' : ''}" title="${G[i].s}: ${fmt(v)} (${pct(v, t)})">${tall && v / t > .14 ? G[i].s.replace('Te Pāti Māori', 'TPM') : ''}</i>` : '').join('')}</div>`;
+}
+function isDark() { return getComputedStyle(document.documentElement).colorScheme.includes('dark'); }
+function barKey(gv) { const t = sum(gv); return `<div class="barkey">${gv.map((v, i) => [v, i]).filter(x => x[0]).sort((a, b) => b[0] - a[0]).map(([v, i]) => `<span class="key"><span class="sw" style="background:${C.g[i]}"></span>${G[i].s} <span class="num">${pct(v, t)}</span></span>`).join('')}</div>`; }
+function partyTable(pv, total, cands, cv) {
+  const rows = pv.map((v, i) => [v, i]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0]);
+  const max = rows.length ? rows[0][0] : 1;
+  let h = `<div class="ptable">${rows.map(([v, i]) => `<span class="sw" style="background:${C.g[gIndexOfParty[i]]}"></span><span>${esc(P[i])}<div class="mini" style="width:${100 * v / max}%;background:${C.g[gIndexOfParty[i]]}"></div></span><span class="num">${fmt(v)}</span><span class="num pc">${pct(v, total)}</span>`).join('')}</div>`;
+  return h;
+}
+
+function placeDetail() {
+  const p = S.sel; if (!p) return '';
+  const d = DOTS.find(x => x.p === p);
+  const homeE = byId.get(p.e);
+  if (!d) return `<section class="sec detail"><div class="row-h"><span class="eyebrow">Voting place</span><button class="linkbtn" data-act="clearsel">Close</button></div><h2>${esc(placeTitle(p))}</h2><p>${esc(p.addr)}</p><p class="muted">No votes from this view are recorded here. Try “All” voting places or a different electorate.</p></section>`;
+  const kinds = [...new Set(d.rows.map(x => x.r.k))].map(k => k === 'A' ? 'Advance voting place' : 'Election day voting place').join(' · ');
+  let h = `<section class="sec detail"><div class="row-h"><span class="eyebrow">${kinds}</span><button class="linkbtn" data-act="clearsel">Close</button></div>
+    <h2>${esc(placeTitle(p))}</h2><p>${esc(p.addr)}, ${esc(p.sub)} · in ${esc(homeE?.name || '')}</p>
+    <div class="stat"><div><span class="big">${fmt(d.votes)}</span><span class="cap">party votes${S.e ? ' from ' + esc(S.e.name) + ' voters' : ''}</span></div><div><span class="big">${d.lean > 0 ? '+' : ''}${(d.lean * 100).toFixed(0)}</span><span class="cap">bloc lean (− Lab/Grn/TPM, + Nat/ACT/NZF)</span></div></div>
+    ${bar(d.g, true)}${partyTable(d.pv, d.votes)}`;
+  if (S.e && d.cv && sum(d.cv)) {
+    const ct = sum(d.cv); const rows = d.cv.map((v, i) => [v, i]).filter(x => x[0]).sort((a, b) => b[0] - a[0]); const max = rows[0][0];
+    h += `<h3>Electorate vote here</h3><div class="ptable">${rows.map(([v, i]) => { const c = S.e.cands[i]; return `<span class="sw" style="background:${C.g[c.g]}"></span><span>${esc(c.full)} <span class="muted">${esc(shortParty(c.party))}</span><div class="mini" style="width:${100 * v / max}%;background:${C.g[c.g]}"></div></span><span class="num">${fmt(v)}</span><span class="num pc">${pct(v, ct)}</span>`; }).join('')}</div>`;
+  }
+  if (!S.e) {
+    const by = new Map(); d.rows.forEach(({ e, r }) => by.set(e, (by.get(e) || 0) + r.votes));
+    if (by.size > 1) h += `<h3>Who voted here</h3><p>Advance voting places take votes from any electorate. This one recorded votes from ${by.size} electorates.</p><div class="contrib">${[...by].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([e, v]) => `<button class="chip" data-e="${e.id}">${esc(e.name)} <span class="num">${fmt(v)}</span></button>`).join('')}${by.size > 12 ? `<span class="chip">+${by.size - 12} more</span>` : ''}</div>`;
+    h += `<button class="linkbtn" data-e="${p.e}">Open ${esc(homeE?.name || '')} →</button>`;
+  }
+  return h + '</section>';
+}
+
+function nationalPanel() {
+  const ng = groups(NATIONAL), nt = sum(ng);
+  const geoVotes = DOTS.reduce((s, d) => s + d.votes, 0);
+  let h = placeDetail();
+  h += `<section class="sec"><span class="eyebrow">Party vote, all of New Zealand</span>${bar(ng, true)}${barKey(ng)}
+    <p>Each dot on the map is one voting place, sized by the party votes cast there. ${S.kind === 'all' ? '' : `Showing ${S.kind === 'A' ? 'advance' : 'election day'} voting places only. `}The dots hold <span class="num">${fmt(geoVotes)}</span> votes (${pct(geoVotes, nt, 0)} of the total). Special, overseas and mobile-team votes have no fixed place, so they are left off the map.</p></section>`;
+  // strongest voting places for chosen party
+  const g = S.party;
+  const top = DOTS.filter(d => d.votes >= 200).map(d => ({ d, s: d.g[g] / d.votes })).sort((a, b) => b.s - a.s).slice(0, 8);
+  h += `<section class="sec" style="padding-bottom:6px"><div class="row-h"><h3>Strongest voting places for</h3><select id="strongSel" aria-label="Party">${G.slice(0, 7).map((x, i) => `<option value="${i}" ${i === g ? 'selected' : ''}>${x.s}</option>`).join('')}</select></div><span class="muted" style="font-size:12px">Voting places with at least 200 party votes</span></section>
+    <div class="list">${top.map(({ d, s }) => `<button class="li${S.sel === d.p ? ' sel' : ''}" data-place="${d.p.i}"><span class="nm"><b>${esc(placeTitle(d.p))}</b><span>${esc(d.p.sub)} · ${esc(byId.get(d.p.e)?.name || '')}</span></span><span class="v num">${(s * 100).toFixed(1)}%</span>${bar(d.g)}</button>`).join('')}</div>`;
+  // electorate index
+  h += `<section class="sec" style="padding-bottom:4px;border-top:1px solid var(--rule)"><h3>Electorates</h3><span class="muted" style="font-size:12px">Party vote in each electorate. Pick one to inspect its voting places.</span></section>`;
+  for (const [title, list] of [['General electorates', E.filter(e => !e.maori)], ['Māori electorates', E.filter(e => e.maori)]]) {
+    h += `<div class="groupt">${title}</div><div class="list">${list.map(e => `<button class="li" data-e="${e.id}"><span class="nm"><b>${esc(e.name)}</b><span>${e.cancelled ? 'Electorate poll cancelled' : `${esc(e.winner.full)} · ${esc(shortParty(e.winner.party))}`}</span></span><span class="v num">${fmt(e.vt)}</span>${bar(e.g)}</button>`).join('')}</div>`;
+  }
+  return h;
+}
+
+function electoratePanel() {
+  const e = S.e;
+  const geo = e.rows.filter(r => r.p >= 0), off = e.rows.filter(r => r.p < 0);
+  const geoV = sum(geo.map(r => r.votes)), offV = sum(off.map(r => r.votes));
+  let h = `<section class="sec"><div class="row-h"><span class="eyebrow">${e.maori ? 'Māori' : 'General'} electorate · No. ${String(e.id).padStart(2, '0')}</span><button class="linkbtn" data-act="national">← All of New Zealand</button></div>
+    <h2>${esc(e.name)}</h2>`;
+  if (e.cancelled) h += `<div class="callout">The electorate poll here was cancelled after a candidate died during the campaign, so there is no electorate vote in these results. Party votes were still counted. A by-election followed on 25 November 2023.</div>`;
+  else { const m = e.winner.votes - e.second.votes;
+    h += `<p><b style="color:var(--ink)">${esc(e.winner.full)}</b> (${esc(shortParty(e.winner.party))}) won the electorate vote by <span class="num">${fmt(m)}</span> votes over ${esc(e.second.full)} (${esc(shortParty(e.second.party))}).${e.name === 'Tāmaki Makaurau' ? ' These are official count figures. A judicial recount later cut the majority to 4.' : ''}</p>`; }
+  h += `${bar(e.g, true)}${barKey(e.g)}</section>`;
+  h += `<div class="tabs" role="tablist">${[['booths', 'Voting places'], ['personal', 'Personal vote'], ['split', 'Split ticket']].map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}</button>`).join('')}</div>`;
+  h += placeDetail();
+  if (S.tab === 'booths') h += boothsTab(e, geo, off, geoV, offV);
+  if (S.tab === 'personal') h += personalTab(e);
+  if (S.tab === 'split') h += splitTab(e);
+  return h;
+}
+
+function boothsTab(e, geo, off, geoV, offV) {
+  // merge rows per place (a venue can be both advance and election-day)
+  const ds = DOTS.slice();
+  const sorters = { lean: (a, b) => a.lean - b.lean, votes: (a, b) => b.votes - a.votes, name: (a, b) => placeTitle(a.p).localeCompare(placeTitle(b.p)) };
+  ds.sort(sorters[S.sort]);
+  const home = e.home ? ds.filter(d => d.p.e === e.id) : ds, away = e.home ? ds.filter(d => d.p.e !== e.id) : [];
+  const row = d => `<button class="li${S.sel === d.p ? ' sel' : ''}" data-place="${d.p.i}"><span class="nm"><b>${esc(placeTitle(d.p))}</b><span>${d.rows.some(x => x.r.k === 'A') ? '<span class="badge">ADV</span>' : ''}${esc(d.p.sub)}</span></span><span class="v num">${fmt(d.votes)}</span>${bar(d.g)}</button>`;
+  let h = `<div class="listhead"><span class="muted" style="font-size:12px">${e.home ? `${home.length} places in the electorate` : `${home.length} voting places took Māori roll votes`} · <span class="num">${pct(geoV, e.vt, 0)}</span> of party votes are on the map</span>
+    <div class="seg" role="group" aria-label="Sort voting places">${[['lean', 'Lean'], ['votes', 'Votes'], ['name', 'A–Z']].map(([k, l]) => `<button data-sort="${k}" aria-pressed="${S.sort === k}">${l}</button>`).join('')}</div></div>`;
+  if (!e.home) h += `<p style="font-size:12px;padding:0 16px 6px">Māori electorates sit over the general electorates and share their voting places, so this list is every place where ${esc(e.name)} voters cast a vote.</p>`;
+  h += `<div class="list">${home.map(row).join('')}</div>`;
+  if (away.length) h += `<div class="groupt">Advance votes cast outside the electorate</div><div class="list">${away.map(row).join('')}</div>`;
+  const offRows = e.rows.filter(r => r.p < 0 && (S.kind === 'all' || r.k === S.kind || r.k === 'S') && r.votes);
+  if (offRows.length) h += `<div class="groupt">Not on the map · ${pct(offV, e.vt, 0)} of party votes</div><div class="list">${offRows.sort((a, b) => b.votes - a.votes).map(r => { const g = groups(r.pv); return `<div class="li" style="cursor:default"><span class="nm"><b>${esc(r.k === 'S' ? r.l : r.l.split(',')[0])}</b><span>${r.k === 'S' ? 'Not tied to a voting place' : 'Mobile or institutional team'}</span></span><span class="v num">${fmt(r.votes)}</span>${bar(g)}</div>`; }).join('')}</div>`;
+  return h;
+}
+
+function personalTab(e) {
+  if (e.cancelled) return `<section class="sec"><p>No electorate vote was taken in ${esc(e.name)} at the general election, so there is no personal vote to compare.</p></section>`;
+  const cands = e.cands.filter(c => c.votes).sort((a, b) => b.votes - a.votes);
+  const c = S.cand && e.cands[S.cand.ci] === S.cand ? S.cand : cands[0];
+  S.cand = c;
+  const pidx = pi(c.party.trim());
+  let h = `<section class="sec"><div class="row-h"><h3>Candidate vote against party vote</h3><select id="candSel" aria-label="Candidate">${cands.map(x => `<option value="${x.ci}" ${x === c ? 'selected' : ''}>${esc(x.full)} (${esc(shortParty(x.party))})</option>`).join('')}</select></div>`;
+  if (pidx < 0) return h + `<p>${esc(c.full)} stood as ${esc(c.party || 'an independent')}, which had no party vote, so there is nothing to compare against. ${esc(c.full)} won ${pct(c.votes, e.ct)} of the electorate vote.</p></section>`;
+  const candShare = c.votes / e.ct, partyShare = e.pvTot[pidx] / e.vt;
+  const diff = (candShare - partyShare) * 100;
+  h += `<div class="stat"><div><span class="big">${(candShare * 100).toFixed(1)}%</span><span class="cap">electorate vote for ${esc(c.sur)}</span></div><div><span class="big">${(partyShare * 100).toFixed(1)}%</span><span class="cap">party vote for ${esc(shortParty(c.party))}</span></div><div><span class="big" style="color:${diff >= 0 ? 'var(--ink)' : 'var(--ink-2)'}">${diff >= 0 ? '+' : '−'}${Math.abs(diff).toFixed(1)}</span><span class="cap">points ${diff >= 0 ? 'ahead of' : 'behind'} the party</span></div></div>`;
+  // scatter
+  const pts = DOTS.filter(d => d.cv && sum(d.cv) >= 20).map(d => ({ d, x: d.pv[pidx] / d.votes, y: d.cv[c.ci] / sum(d.cv), n: sum(d.cv) }));
+  const mx = Math.min(1, Math.ceil(Math.max(0.1, ...pts.map(p => Math.max(p.x, p.y))) * 10) / 10);
+  const w = 420, ht = 300, m = { l: 36, r: 12, t: 12, b: 32 };
+  const X = v => m.l + v / mx * (w - m.l - m.r), Y = v => ht - m.b - v / mx * (ht - m.t - m.b);
+  const ticks = []; for (let t = 0; t <= mx + 1e-9; t += mx > 0.5 ? 0.2 : 0.1) ticks.push(+t.toFixed(2));
+  const col = C.g[c.g];
+  let svg = `<svg viewBox="0 0 ${w} ${ht}" role="img" aria-label="Scatter of voting places: party vote share on the horizontal axis, candidate vote share on the vertical">`;
+  svg += ticks.map(t => `<line x1="${X(t)}" x2="${X(t)}" y1="${m.t}" y2="${ht - m.b}" stroke="${C.rule}" stroke-width="1"/><line x1="${m.l}" x2="${w - m.r}" y1="${Y(t)}" y2="${Y(t)}" stroke="${C.rule}" stroke-width="1"/><text x="${X(t)}" y="${ht - m.b + 14}" text-anchor="middle">${Math.round(t * 100)}%</text><text x="${m.l - 6}" y="${Y(t) + 3.5}" text-anchor="end">${Math.round(t * 100)}%</text>`).join('');
+  svg += `<line x1="${X(0)}" y1="${Y(0)}" x2="${X(mx)}" y2="${Y(mx)}" stroke="${C.ink3}" stroke-dasharray="4 3" stroke-width="1"/>`;
+  svg += `<text class="lab" x="${X(mx * 0.04)}" y="${Y(mx * 0.93)}">Candidate ahead of party ↑</text><text class="lab" x="${X(mx * 0.96)}" y="${Y(mx * 0.06)}" text-anchor="end">Party ahead of candidate ↓</text>`;
+  svg += `<text class="lab" x="${(m.l + w - m.r) / 2}" y="${ht - 4}" text-anchor="middle">${esc(shortParty(c.party))} share of party vote</text>`;
+  pts.sort((a, b) => b.n - a.n).forEach(p => { svg += `<circle data-place="${p.d.p.i}" cx="${X(p.x).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="${Math.min(9, 2 + Math.sqrt(p.n) / 6).toFixed(1)}" fill="${col}" fill-opacity="${S.sel === p.d.p ? 1 : 0.55}" stroke="${S.sel === p.d.p ? C.accent : C.panel}" stroke-width="${S.sel === p.d.p ? 2.5 : 1}"><title>${esc(placeTitle(p.d.p))}: ${esc(c.sur)} ${(p.y * 100).toFixed(1)}%, ${esc(shortParty(c.party))} ${(p.x * 100).toFixed(1)}%</title></circle>`; });
+  svg += `</svg>`;
+  h += `<div class="chart" id="scatter">${svg}</div><p style="font-size:12px">Each circle is a voting place with at least 20 electorate votes, sized by votes. Above the dashed line, ${esc(c.sur)} won more electorate votes than ${esc(shortParty(c.party))} won party votes.</p></section>`;
+  const gaps = pts.filter(p => p.n >= 50).map(p => ({ ...p, g: p.y - p.x })).sort((a, b) => b.g - a.g);
+  const lst = (arr, t) => arr.length ? `<div class="groupt">${t}</div><div class="list">${arr.map(p => `<button class="li${S.sel === p.d.p ? ' sel' : ''}" data-place="${p.d.p.i}"><span class="nm"><b>${esc(placeTitle(p.d.p))}</b><span>${esc(c.sur)} ${(p.y * 100).toFixed(0)}% · ${esc(shortParty(c.party))} ${(p.x * 100).toFixed(0)}%</span></span><span class="v num">${p.g >= 0 ? '+' : '−'}${Math.abs(p.g * 100).toFixed(1)}</span>${bar(p.d.g)}</button>`).join('')}</div>` : '';
+  h += lst(gaps.slice(0, 5), `Biggest personal vote for ${esc(c.sur)}`);
+  h += lst(gaps.slice(-5).reverse().filter(p => p.g < 0), `Where ${esc(shortParty(c.party))} ran furthest ahead`);
+  return h;
+}
+
+function splitTab(e) {
+  const sp = e.split; if (!sp || !sp.rows.length) return '<section class="sec"><p>No split-vote data for this electorate.</p></section>';
+  const totalRow = sp.rows.find(r => r[0].startsWith('Total'));
+  // columns: candidates with ≥1.5% overall, others merged; plus party-vote-only
+  const colInfo = sp.cols.map((c, j) => ({ j, c, tot: totalRow ? totalRow[2 + j] : 0 }));
+  const keep = colInfo.filter(x => typeof x.c === 'number' && x.tot >= 1.5).sort((a, b) => b.tot - a.tot);
+  const rest = colInfo.filter(x => typeof x.c === 'number' && x.tot < 1.5);
+  const pvo = colInfo.find(x => x.c === 'Party Vote Only'), inf = colInfo.find(x => x.c === 'Informal Candidate Votes');
+  const rows = sp.rows.filter(r => !r[0].startsWith('Total') && !r[0].startsWith('Informal') && r[1] / e.vt >= 0.01).sort((a, b) => b[1] - a[1]);
+  const cell = (v, own) => { const a = Math.min(1, v / 100); const bg = `color-mix(in oklab, var(--ink) ${Math.round(a * 85)}%, var(--panel))`; return `<td class="${own ? 'own' : ''}" style="background:${bg};color:${a > .5 ? 'var(--panel)' : 'var(--ink)'}">${v >= 0.5 ? v.toFixed(0) : v > 0 ? '·' : ''}</td>`; };
+  let h = `<section class="sec"><h3>Where each party's voters gave their electorate vote</h3><p style="font-size:12.5px">Read across a row: of everyone who gave ${esc(e.name)}'s party vote to that party, the percentage who gave their electorate vote to each candidate. Outlined cells are the party's own candidate. This table is for the whole electorate and isn't broken down by voting place.</p>`;
+  if (e.cancelled) return h + `<p>The electorate poll was cancelled, so there is no split to show.</p></section>`;
+  h += `<div class="mx"><table><thead><tr><th class="rh">Party vote</th><th>Votes</th>${keep.map(x => { const c = e.cands[x.c]; return `<th><span class="ch"><span class="sw" style="background:${C.g[c.g]}"></span>${esc(c.sur)}</span></th>`; }).join('')}${rest.length ? '<th>Others</th>' : ''}${pvo ? '<th>Party<br>only</th>' : ''}</tr></thead><tbody>`;
+  for (const r of rows) {
+    const pIdx = pi(r[0]);
+    h += `<tr><th class="rh"><span class="key"><span class="sw" style="background:${C.g[pIdx < 0 ? NG - 1 : gIndexOfParty[pIdx]]}"></span>${esc(shortParty(r[0]))}</span></th><td style="color:var(--ink-2)">${fmt(r[1])}</td>${keep.map(x => cell(r[2 + x.j], e.cands[x.c].party.trim() === r[0].trim())).join('')}${rest.length ? cell(rest.reduce((s, x) => s + r[2 + x.j], 0) + (inf ? r[2 + inf.j] : 0), false) : ''}${pvo ? cell(r[2 + pvo.j], false) : ''}</tr>`;
+  }
+  h += `</tbody></table></div><p style="font-size:12px">Parties with at least 1% of the party vote. “Others” includes minor candidates and informal electorate votes. “Party only” counts votes where only the party vote could be counted, for example special votes from people enrolled for a different electorate.</p></section>`;
+  return h;
+}
+
+function renderPanel() {
+  const panel = document.getElementById('panel');
+  panel.innerHTML = (S.e ? electoratePanel() : nationalPanel()) + `<section class="sec" style="font-size:11.5px;color:var(--ink-3)">Results: Electoral Commission, 2023 General Election official results. Voting place locations are approximate. Coastline: Land Information New Zealand (Topo 1:50k), CC BY 4.0. Electorate boundaries: Stats NZ (2020), CC BY 4.0.</section>`;
+  const ss = document.getElementById('strongSel'); if (ss) ss.onchange = () => { S.party = +ss.value; partySel.value = S.party; buildDots(); draw(); legend(); renderPanel(); };
+  const cs = document.getElementById('candSel'); if (cs) cs.onchange = () => { S.cand = S.e.cands[+cs.value]; renderPanel(); };
+}
+const panelEl = document.getElementById('panel');
+panelEl.addEventListener('click', ev => {
+  const t = ev.target.closest('[data-place],[data-e],[data-act],[data-tab],[data-sort]'); if (!t) return;
+  if (t.dataset.tab) { S.tab = t.dataset.tab; renderPanel(); return; }
+  if (t.dataset.sort) { S.sort = t.dataset.sort; renderPanel(); return; }
+  if (t.dataset.act === 'national') { setElectorate(null); return; }
+  if (t.dataset.act === 'clearsel') { selectPlace(null); return; }
+  if (t.dataset.e) { setElectorate(byId.get(+t.dataset.e)); return; }
+  if (t.dataset.place) { const p = places[+t.dataset.place]; selectPlace(S.sel === p ? null : p, false); centreOn(p); }
+});
+panelEl.addEventListener('pointerover', ev => { const t = ev.target.closest('[data-place]'); const p = t ? places[+t.dataset.place] : null; if (p !== S.hover) { S.hover = p; draw(); const d = DOTS.find(x => x.p === p); if (d && d.sx > 0 && d.sx < W && d.sy > 0 && d.sy < H) showTip(d); else hideTip(); } });
+panelEl.addEventListener('pointerleave', () => { S.hover = null; hideTip(); draw(); });
+function centreOn(p) { const x = sx(p.x), y = sy(p.y); if (x > 40 && x < W - 40 && y > 60 && y < H - 60) return; animateTo({ cx: p.x, cy: p.y, s: Math.max(V.s, BASE_S() * 6) }); }
+
+// ---------- boot ----------
+if (lmap) {
+  const seg = document.getElementById('bmSeg'); seg.hidden = false;
+  seg.onclick = e => { const b = e.target.closest('button'); if (b) setBasemap(b.dataset.bm === 'on'); };
+}
+window.__bi = { V, get lmap() { return lmap; }, get wheelPt() { return wheelPt; }, places, proj, sx: x => sx(x), sy: y => sy(y), get dots() { return DOTS; } }; // debugging hook
+readColours();
+const mo = new MutationObserver(() => { readColours(); setTiles(); draw(); legend(); renderPanel(); });
+mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColours(); setTiles(); draw(); legend(); renderPanel(); });
+new ResizeObserver(() => { const first = !W; resize(); if (first) { fitView(false); let pref = null; try { pref = localStorage.getItem('bi-streetmap'); } catch (_) {} if (pref === 'off') setBasemap(false, false); } }).observe(wrap);
+const h0 = /^#e(\d+)$/.exec(location.hash);
+renderModes();
+if (h0 && byId.get(+h0[1])) { S.e = byId.get(+h0[1]); elSel.value = S.e.id; renderModes(); }
+buildDots(); legend(); renderPanel();
+document.fonts && document.fonts.ready.then(() => draw());
+})();
+</script>
